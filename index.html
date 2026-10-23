@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IELTS Master — Simulasi & Belajar IELTS</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-logo">🎯</span>
+        <div class="brand-text">
+          <strong>IELTS Master</strong>
+          <span class="brand-sub">Simulasi &amp; Belajar</span>
+        </div>
+      </div>
+
+      <nav id="nav">
+        <a href="#/dashboard" class="nav-link" data-route="dashboard"><span class="ico">🏠</span> Dasbor</a>
+        <a href="#/learn" class="nav-link" data-route="learn"><span class="ico">🛤️</span> Jalur Belajar</a>
+        <div class="nav-group-label">Modul Skill</div>
+        <a href="#/skill/listening" class="nav-link" data-route="listening"><span class="ico">🎧</span> Listening</a>
+        <a href="#/skill/reading" class="nav-link" data-route="reading"><span class="ico">📖</span> Reading</a>
+        <a href="#/skill/writing" class="nav-link" data-route="writing"><span class="ico">✍️</span> Writing</a>
+        <a href="#/skill/speaking" class="nav-link" data-route="speaking"><span class="ico">🗣️</span> Speaking</a>
+        <div class="nav-group-label">Sumber Belajar</div>
+        <a href="#/vocab" class="nav-link" data-route="vocab"><span class="ico">📚</span> Vocabulary</a>
+        <a href="#/grammar" class="nav-link" data-route="grammar"><span class="ico">🔤</span> Grammar</a>
+        <a href="#/practice" class="nav-link" data-route="practice"><span class="ico">🏦</span> Bank Latihan</a>
+        <a href="#/mixed" class="nav-link" data-route="mixed"><span class="ico">🎲</span> Mode Campuran</a>
+        <div class="nav-group-label">Simulasi</div>
+        <a href="#/mock" class="nav-link" data-route="mock"><span class="ico">⏱️</span> Tes Simulasi</a>
+        <a href="#/exam" class="nav-link" data-route="exam"><span class="ico">🎓</span> Ujian per Level</a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="level-badge" id="sideLevel">Level: —</div>
+        <div class="progress-mini">
+          <div class="progress-mini-track"><div class="progress-mini-fill" id="sideProgress"></div></div>
+          <span class="progress-mini-text" id="sideProgressText">0%</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main id="main">
+      <header id="topbar">
+        <button class="icon-btn" id="menuBtn" title="Menu">☰</button>
+        <div class="topbar-title" id="topbarTitle">Dasbor</div>
+        <div class="topbar-right">
+          <span class="streak" id="streak">🔥 0</span>
+        </div>
+      </header>
+      <div id="view"></div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data-core.js"></script>
+  <script src="js/data-reading.js"></script>
+  <script src="js/data-listening.js"></script>
+  <script src="js/data-vocab.js"></script>
+  <script src="js/practice.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -982,6 +982,321 @@
     if ($("#speakTimer")) attachTimer("#speakTimer", "#cueTimerWrap", 120, "Berbicara");
     if ($("#qTimer")) attachTimer("#qTimer", "#qTimerWrap", 60, "Jawab");
     $("#doneSpeaking").onclick = () => { markSkillDone("speaking", ex.id); toast("✅ Ditandai selesai!"); $("#doneSpeaking").textContent = "Selesai ✓"; };
+
+    /* Fitur rekam + interpretasi */
+    const refText = ex.cueCard ? ex.cueCard.topic : (ex.questions || []).join(" ");
+    appendRecorder(ex.questions || [], ex.cueCard ? ex.cueCard.topic : "");
+    if (ex.questions && ex.questions.length) appendGuided(ex.questions);
+  }
+
+  /* ============================================================
+     Fitur Rekam + Speech-to-Text + Interpretasi (Speaking)
+     ============================================================ */
+  function appendRecorder(questions, cueTopic) {
+    const view = $("#view");
+    if (!view) return;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.marginTop = "16px";
+    card.style.marginBottom = "16px";
+    card.innerHTML = `
+      <h3>🎙️ Simulasi Bicara & Analisis</h3>
+      <p class="muted">Tekan rekam, bicaralah, dan aplikasi akan menyalin ucapan Anda lalu memberi analisis indikatif.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn primary" id="recBtn">🎙️ Mulai Rekam</button>
+        <button class="btn" id="playRec" disabled>▶ Putar Rekaman</button>
+        <button class="btn" id="stopRec" disabled>⏹ Berhenti</button>
+        <button class="btn ghost" id="clearRec">✖ Bersihkan</button>
+      </div>
+      <div class="muted" style="margin-top:10px;font-size:13px" id="recStatus">Status: siap.</div>
+      <div class="info-box" style="margin-top:12px">
+        <label class="muted" style="display:block;margin-bottom:6px">📝 Transkrip ucapan Anda:</label>
+        <textarea id="recTranscript" rows="5" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px" placeholder="Jawaban Anda akan muncul di sini secara otomatis (Chrome/Edge) atau bisa diketik manual."></textarea>
+      </div>
+      <div id="recAnalysis" style="margin-top:12px"></div>
+    `;
+    view.appendChild(card);
+
+    const recBtn = card.querySelector("#recBtn");
+    const playRec = card.querySelector("#playRec");
+    const stopRecBtn = card.querySelector("#stopRec");
+    const clearRec = card.querySelector("#clearRec");
+    const status = card.querySelector("#recStatus");
+    const transcript = card.querySelector("#recTranscript");
+    const analysis = card.querySelector("#recAnalysis");
+
+    let mediaRecorder = null, chunks = [], recordedBlob = null, recordedUrl = null;
+    let recognition = null, finalTranscript = "", interimTranscript = "";
+    let startTime = 0, recMs = 0;
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const hasSTT = !!SR;
+
+    /* --- Analisis --- */
+    function analyze(text, durMs) {
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      const wc = words.length;
+      const fillers = ["um", "uh", "erm", "hmm", "you know", "like", "er"];
+      let fillerCount = 0;
+      const lower = text.toLowerCase();
+      fillers.forEach((f) => { const re = new RegExp("\\b" + f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"); const m = lower.match(re); if (m) fillerCount += m.length; });
+      const unique = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z']/g, "")));
+      const minutes = durMs ? durMs / 60000 : (wc ? wc / 120 : 0.5);
+      const wpm = Math.round(wc / Math.max(minutes, 0.01));
+
+      /* kesesuaian topik: berapa kata kunci dari pertanyaan muncul? */
+      let kwHits = 0;
+      const kw = [];
+      const refText = (cueTopic || "") + " " + (questions || []).join(" ");
+      refText.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter((w) => w.length > 3).forEach((w) => { if (lower.includes(w)) kw.push(w); });
+      kwHits = new Set(kw).size;
+
+      /* polanya kesalahan umum grammar */
+      let errors = [];
+      const gs = [
+        [/ I am agree /g, "I agree"],
+        [/ she go /g, "she goes"],
+        [/ he go /g, "he goes"],
+        [/ they is /g, "they are"],
+        [/ we is /g, "we are"],
+        [/ it are /g, "it is"],
+        [/ I doesn't /g, "I don't"],
+        [/ I don't knows /g, "I don't know"],
+        [/ more better /g, "better"],
+        [/ more easier /g, "easier"],
+      ];
+      gs.forEach(([re, fix]) => { if (re.test(lower)) errors.push(fix); });
+
+      /* Skor indikatif 0-100 */
+      let score = 20;
+      if (wc >= 5) score += 15;
+      if (wc >= 20) score += 10;
+      if (wc >= 40) score += 10;
+      if (wpm >= 90 && wpm <= 160) score += 15; else if (wpm > 0) score += 6;
+      if (fillerCount <= 1) score += 10; else if (fillerCount <= 3) score += 5;
+      if (kwHits >= 2) score += 10; else if (kwHits >= 1) score += 5;
+      if (errors.length === 0 && wc >= 20) score += 10; else if (errors.length === 0) score += 4;
+      score = Math.min(100, Math.max(0, score));
+
+      const band = bandFromPct(score);
+      analysis.innerHTML = `
+        <h4 style="margin-bottom:10px">📊 Analisis Indikatif</h4>
+        <div class="grid cols-3">
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:22px">${wc}</div><div class="lbl">Total kata</div></div>
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:22px">${wpm}</div><div class="lbl">Kata/menit</div></div>
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:22px;color:${score>=60?"var(--green)":"var(--amber)"}">${score}</div><div class="lbl">Skor indikatif</div></div>
+        </div>
+        <div style="margin-top:12px">
+          <span class="level-chip" style="background:var(--accent)">Estimasi band: ${band}</span>
+        </div>
+        <ul style="margin-top:12px">
+          <li>Jumlah kata unik: <strong>${unique.size}</strong></li>
+          <li>Kata pengisi (um/uh): <strong>${fillerCount}</strong> ${fillerCount <= 1 ? "✅ bagus" : "— usahakan kurangi"}</li>
+          <li>Kecocokan kata kunci topik: <strong>${kwHits}</strong> ${kwHits >= 2 ? "✅ sesuai topik" : "— usahakan sebutkan istilah topik"}</li>
+          ${errors.length ? `<li>Pola yang perlu diperbaiki: <strong>${errors.slice(0,4).join(", ")}</strong></li>` : `<li>✅ Tidak terdeteksi pola kesalahan umum.</li>`}
+        </ul>
+        <div class="tip" style="margin-top:10px">💡 Analisis ini bersifat indikatif (panjang, kelancaran, kosakata, kecocokan topik). Untuk penilaian konten yang mendalam dibutuhkan AI berbasis server.</div>
+      `;
+    }
+
+    /* --- MediaRecorder --- */
+    function startRecording() {
+      chunks = [];
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status.textContent = "Status: browser tidak mendukung rekaman."; return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(chunks, { type: "audio/webm" });
+          if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+          recordedUrl = URL.createObjectURL(recordedBlob);
+          playRec.disabled = false;
+          stream.getTracks().forEach((t) => t.stop());
+        };
+        mediaRecorder.start();
+        startTime = Date.now();
+        recBtn.disabled = true;
+        stopRecBtn.disabled = false;
+        status.textContent = "Status: merekam... bicaralah.";
+      }).catch(() => { status.textContent = "Status: mikrofon ditolak / tidak tersedia."; });
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+        recMs = Date.now() - startTime;
+        recBtn.disabled = false;
+        stopRecBtn.disabled = true;
+        status.textContent = "Status: rekaman selesai.";
+      }
+    }
+
+    function startSTT() {
+      if (!hasSTT) return;
+      recognition = new SR();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
+      recognition.continuous = true;
+      finalTranscript = ""; interimTranscript = "";
+      recognition.onresult = (e) => {
+        interimTranscript = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) finalTranscript += r[0].transcript + " ";
+          else interimTranscript += r[0].transcript;
+        }
+        transcript.value = (finalTranscript + interimTranscript).trim();
+      };
+      recognition.onend = () => { /* otomatis berhenti */ };
+      recognition.start();
+    }
+
+    function stopSTT() { if (recognition) { try { recognition.stop(); } catch (e) {} } }
+
+    recBtn.onclick = () => {
+      if (!hasSTT) status.textContent = "Status: Speech-to-Text tidak didukung di browser ini (gunakan Chrome/Edge).";
+      startRecording();
+      startSTT();
+    };
+    stopRecBtn.onclick = () => { stopRecording(); stopSTT(); if (transcript.value.trim()) analyze(transcript.value, recMs); };
+    playRec.onclick = () => { if (recordedUrl) { const a = new Audio(recordedUrl); a.play(); } };
+    clearRec.onclick = () => { transcript.value = ""; analysis.innerHTML = ""; finalTranscript = ""; status.textContent = "Status: siap."; };
+
+    transcript.addEventListener("input", () => {
+      if (transcript.value.trim() && !mediaRecorder) analyze(transcript.value, recMs);
+    });
+
+    status.textContent = hasSTT ? "Status: siap. Gunakan Chrome/Edge untuk transkrip otomatis." : "Status: siap (transkrip manual di Chrome/Edge otomatis).";
+  }
+
+  /* ============================================================
+     Guided Speaking: pertanyaan audio muncul bertahap
+     (pernyaan → jawab/rekam → pertanyaan berikutnya)
+     ============================================================ */
+  function appendGuided(questions) {
+    const view = $("#view");
+    if (!view) return;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.marginTop = "16px";
+    card.style.marginBottom = "16px";
+    card.innerHTML = `
+      <h3>🧭 Latihan Terpandu (Berkesinambungan)</h3>
+      <p class="muted">Masing-masing pertanyaan dibacakan (audio). Jawab/rekam, lalu lanjut ke pertanyaan berikutnya.</p>
+      <div class="qblock">
+        <div class="qleading" id="gqCount">Pertanyaan 1 / ${questions.length}</div>
+        <div class="info-box" id="gqText" style="font-size:16px"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+          <button class="tts-btn" id="gqPlay" title="Dengar pertanyaan">▶</button>
+          <button class="btn primary" id="gRecBtn">🎙️ Mulai Rekam</button>
+          <button class="btn" id="gStopBtn" disabled>⏹ Berhenti</button>
+          <button class="btn" id="gNextBtn" disabled>Soal Berikutnya →</button>
+        </div>
+        <div class="muted" style="margin-top:8px;font-size:13px" id="gStatus">Status: siap.</div>
+        <div style="margin-top:10px">
+          <label class="muted" style="display:block;margin-bottom:4px">📝 Jawaban Anda (transkrip):</label>
+          <textarea id="gTranscript" rows="4" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px" placeholder="Jawaban Anda akan muncul di sini (Chrome/Edge) atau bisa diketik manual."></textarea>
+        </div>
+        <div id="gAnalysis" style="margin-top:10px"></div>
+      </div>
+    `;
+    view.appendChild(card);
+
+    let qi = 0;
+    const gqText = card.querySelector("#gqText");
+    const gqCount = card.querySelector("#gqCount");
+    const gqPlay = card.querySelector("#gqPlay");
+    const gRecBtn = card.querySelector("#gRecBtn");
+    const gStopBtn = card.querySelector("#gStopBtn");
+    const gNextBtn = card.querySelector("#gNextBtn");
+    const gStatus = card.querySelector("#gStatus");
+    const gTranscript = card.querySelector("#gTranscript");
+    const gAnalysis = card.querySelector("#gAnalysis");
+
+    let mediaRecorder = null, chunks = [], recordedUrl = null;
+    let recognition = null, finalT = "";
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const hasSTT = !!SR;
+
+    function showQ() {
+      const q = questions[qi];
+      gqCount.textContent = "Pertanyaan " + (qi + 1) + " / " + questions.length + (qi === questions.length - 1 ? " (terakhir)" : "");
+      gqText.innerHTML = esc(q);
+      gTranscript.value = ""; finalT = "";
+      gAnalysis.innerHTML = "";
+      gNextBtn.disabled = true;
+      gStatus.textContent = "Status: siap. Tekan ▶ untuk mendengar pertanyaan.";
+    }
+
+    function analyzeGuided() {
+      const text = gTranscript.value.trim();
+      if (!text) return;
+      const words = text.split(/\s+/).filter(Boolean);
+      const wc = words.length;
+      const wpm = Math.round(wc / Math.max((wc ? wc / 120 : 0.5), 0.01));
+      let score = 20;
+      if (wc >= 5) score += 15;
+      if (wc >= 20) score += 15;
+      if (wpm >= 90 && wpm <= 160) score += 15; else if (wpm > 0) score += 6;
+      if (wc >= 20) score += 10;
+      score = Math.min(100, Math.max(0, score));
+      gAnalysis.innerHTML = `
+        <div class="grid cols-3">
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:20px">${wc}</div><div class="lbl">Kata</div></div>
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:20px">${wpm}</div><div class="lbl">Kata/menit</div></div>
+          <div class="stat" style="margin:0;padding:12px"><div class="num" style="font-size:20px;color:var(--accent)">${score}</div><div class="lbl">Skor indikatif</div></div>
+        </div>
+        <div style="margin-top:8px"><span class="level-chip" style="background:var(--accent)">Estimasi band: ${bandFromPct(score)}</span></div>`;
+    }
+
+    function startGRec() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { gStatus.textContent = "Status: rekaman tidak didukung."; return; }
+      chunks = [];
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        mediaRecorder.onstop = () => { stream.getTracks().forEach((t) => t.stop()); };
+        mediaRecorder.start();
+        gRecBtn.disabled = true;
+        gStopBtn.disabled = false;
+        gStatus.textContent = "Status: merekam...";
+        if (hasSTT) {
+          recognition = new SR();
+          recognition.lang = "en-US";
+          recognition.interimResults = true;
+          recognition.continuous = true;
+          finalT = "";
+          recognition.onresult = (e) => {
+            let inter = "";
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              const r = e.results[i];
+              if (r.isFinal) finalT += r[0].transcript + " ";
+              else inter += r[0].transcript;
+            }
+            gTranscript.value = (finalT + inter).trim();
+          };
+          recognition.start();
+        }
+      }).catch(() => { gStatus.textContent = "Status: mikrofon ditolak."; });
+    }
+
+    function stopGRec() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      gRecBtn.disabled = false;
+      gStopBtn.disabled = true;
+      gStatus.textContent = "Status: rekaman selesai. Bisa lanjut ke soal berikutnya.";
+      analyzeGuided();
+      gNextBtn.disabled = false;
+    }
+
+    gqPlay.onclick = () => tts.speak(questions[qi] + ". Please answer this question.");
+    gRecBtn.onclick = startGRec;
+    gStopBtn.onclick = stopGRec;
+    gNextBtn.onclick = () => { if (qi < questions.length - 1) { qi++; showQ(); } else { gNextBtn.disabled = true; gStatus.textContent = "Status: semua pertanyaan selesai. 🎉"; } };
+    gTranscript.addEventListener("input", () => { if (gTranscript.value.trim()) { gNextBtn.disabled = false; } });
+
+    showQ();
   }
 
   /* ============================================================
@@ -1806,6 +2121,10 @@
         </div>`;
       $("#eResult").scrollIntoView({ behavior: "smooth", block: "nearest" });
     };
+
+    /* Fitur rekam + interpretasi di ujian speaking */
+    appendRecorder(ex.questions || [], "");
+    if (ex.questions && ex.questions.length) appendGuided(ex.questions);
   }
 
   routes.examResult = (params) => {

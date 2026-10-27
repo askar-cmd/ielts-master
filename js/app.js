@@ -308,6 +308,16 @@
         <div style="margin-top:14px">${lastHtml}</div>
       </div>
       ${practiceStatsCard(d)}
+      ${!hasPremium() ? `
+      <div class="card" style="margin-top:16px;background:linear-gradient(135deg,rgba(155,107,243,.12),rgba(74,143,247,.12));border-color:var(--purple)">
+        <h2>⭐ Premium IELTS Master</h2>
+        <p class="muted">Buka level Intermediate, Advanced & Expert — plus Bank Latihan, Mode Campuran, dan Ujian per Level.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <span style="font-size:22px;font-weight:800;color:var(--purple)">Rp 99.000</span>
+          <span class="muted">sekali bayar · lifetime</span>
+          <a class="btn primary" href="#/premium" style="margin-left:auto">⭐ Aktivasi Premium</a>
+        </div>
+      </div>` : ""}
       <div class="card" style="margin-top:16px">
         <h2>Simulasi Tes Singkat</h2>
         <p class="muted">Coba tes simulasi penuh untuk mengukur kemampuan Anda.</p>
@@ -377,6 +387,7 @@
   routes.lesson = (params) => {
     const l = lessonById(params[0]);
     if (!l) { go("learn"); return; }
+    if (premiumGate(l.level)) return;
     const lv = LEVEL_MAP[l.level];
     $("#topbarTitle").textContent = l.title;
     const done = isDone(l.id);
@@ -435,12 +446,13 @@
               ${ls.map((l) => {
                 const skillIcon = { listening: "🎧", reading: "📖", writing: "✍️", speaking: "🗣️", grammar: "🔤", vocab: "📚", guide: "ℹ️" }[l.skill] || "";
                 const done = isDone(l.id);
+                const locked = isLocked(l.level);
                 return `
-                  <div class="lesson-row ${done ? "done" : ""}" onclick="location.hash='#/${exerciseRoute(l)}'">
-                    <span class="l-ico">${skillIcon}</span>
-                    <span class="l-title">${esc(l.title)}</span>
+                  <div class="lesson-row ${done ? "done" : ""} ${locked ? "locked" : ""}" onclick="${locked ? "location.hash='#/premium'" : "location.hash='#/" + exerciseRoute(l) + "'"}">
+                    <span class="l-ico">${locked ? "🔒" : skillIcon}</span>
+                    <span class="l-title">${esc(l.title)}${locked ? " 🔒" : ""}</span>
                     <span class="l-skill">${ucfirst(l.skill)}</span>
-                    <span class="l-status">${done ? "✅" : "○"}</span>
+                    <span class="l-status">${locked ? "Premium" : (done ? "✅" : "○")}</span>
                   </div>`;
               }).join("")}
               ${pct >= 100 ? `<div class="tip" style="margin-top:8px">🎉 Level ${lv.name} selesai! Lanjut ke level berikutnya.</div>` : ""}
@@ -507,19 +519,20 @@
           const lv = LEVEL_MAP[item.level];
           const done = isDone("@" + type + "/" + item.id);
           const nq = item.questions ? item.questions.length : 0;
+          const locked = isLocked(item.level);
           let meta = "";
           if (type === "listening") meta = `<span class="muted">🎧 audio · ${nq} soal</span>`;
           else if (type === "reading") meta = `<span class="muted">📄 passage · ${nq} soal</span>`;
           else if (type === "writing") meta = `<span class="muted">Task ${item.taskType}</span>`;
           else if (type === "speaking") meta = `<span class="muted">Part ${item.part}</span>`;
           return `
-            <div class="lesson-row" onclick="location.hash='#/exercise/${type}/${item.id}'">
-              <span class="l-ico">${lv.icon}</span>
+            <div class="lesson-row" onclick="${locked ? "location.hash='#/premium'" : "location.hash='#/exercise/" + type + "/" + item.id + "'"}">
+              <span class="l-ico">${locked ? "🔒" : lv.icon}</span>
               <span style="flex:1">
-                <div class="l-title">${esc(item.title)}</div>
-                <div style="font-size:12px;color:var(--muted)">${esc(lv.name)} · ${meta}</div>
+                <div class="l-title">${esc(item.title)}${locked ? " 🔒" : ""}</div>
+                <div style="font-size:12px;color:var(--muted)">${esc(lv.name)} · ${meta}${locked ? " · Premium" : ""}</div>
               </span>
-              <span class="l-status">${done ? "✅" : "→"}</span>
+              <span class="l-status">${locked ? "🔒" : (done ? "✅" : "→")}</span>
             </div>`;
         }).join("")}
       </div>
@@ -1359,15 +1372,16 @@
           <div class="grid cols-2">
             ${sets.map((set) => {
               const learned = (S.data().vocab[set.id] || []).length;
+              const locked = isLocked(set.level);
               return `
-                <div class="card set-card" onclick="location.hash='#/vocab/${set.id}'">
+                <div class="card set-card" onclick="${locked ? "location.hash='#/premium'" : "location.hash='#/vocab/" + set.id + "'"}">
                   <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-size:26px">📘</span>
+                    <span style="font-size:26px">${locked ? "🔒" : "📘"}</span>
                     <div style="flex:1">
-                      <div style="font-weight:700">${esc(set.topic)}</div>
-                      <div class="muted" style="font-size:13px">${set.words.length} kata · ${learned}/${set.words.length} dipelajari</div>
+                      <div style="font-weight:700">${esc(set.topic)}${locked ? " 🔒" : ""}</div>
+                      <div class="muted" style="font-size:13px">${set.words.length} kata · ${learned}/${set.words.length} dipelajari${locked ? " · Premium" : ""}</div>
                     </div>
-                    <span>→</span>
+                    <span>${locked ? "🔒" : "→"}</span>
                   </div>
                 </div>`;
             }).join("")}
@@ -1379,6 +1393,7 @@
   routes.vocabSet = (params) => {
     const set = vocabById(params[0]);
     if (!set) { go("vocab"); return; }
+    if (premiumGate(set.level)) return;
     const lv = LEVEL_MAP[set.level];
     $("#topbarTitle").textContent = set.topic;
 
@@ -1565,18 +1580,22 @@
         if (!lessons.length) return "";
         return `
           <h2 style="margin-top:20px">${lv.icon} ${lv.name}</h2>
-          ${lessons.map((g) => `
-            <div class="lesson-row" onclick="location.hash='#/grammar/${g.id}'">
-              <span class="l-ico">🔤</span>
-              <span class="l-title">${esc(g.title)}</span>
-              <span class="l-status">→</span>
-            </div>`).join("")}`;
+          ${lessons.map((g) => {
+            const locked = isLocked(g.level);
+            return `
+            <div class="lesson-row" onclick="${locked ? "location.hash='#/premium'" : "location.hash='#/grammar/" + g.id + "'"}">
+              <span class="l-ico">${locked ? "🔒" : "🔤"}</span>
+              <span class="l-title">${esc(g.title)}${locked ? " 🔒" : ""}</span>
+              <span class="l-status">${locked ? "Premium" : "→"}</span>
+            </div>`;
+          }).join("")}`;
       }).join("")}`;
   };
 
   routes.grammarLesson = (params) => {
     const g = grammarById(params[0]);
     if (!g) { go("grammar"); return; }
+    if (premiumGate(g.level)) return;
     const lv = LEVEL_MAP[g.level];
     $("#topbarTitle").textContent = g.title;
 
@@ -2076,12 +2095,13 @@
       ${LEVELS.map((lv) => {
         const ob = overallBand(lv.id);
         const started = EXAM_SKILLS.some((s) => getExam(lv.id, s));
+        const locked = isLocked(lv.id);
         return `
           <div class="card" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <span style="font-size:28px">${lv.icon}</span>
+              <span style="font-size:28px">${locked ? "🔒" : lv.icon}</span>
               <div style="flex:1">
-                <div style="font-weight:800;font-size:18px">${lv.name} <span class="muted" style="font-size:13px;font-weight:400">(${lv.band})</span></div>
+                <div style="font-weight:800;font-size:18px">${lv.name} <span class="muted" style="font-size:13px;font-weight:400">(${lv.band})</span>${locked ? " 🔒" : ""}</div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
                   ${EXAM_SKILLS.map((s) => {
                     const r = getExam(lv.id, s);
@@ -2091,7 +2111,7 @@
               </div>
               <div style="text-align:right">
                 ${ob !== null ? `<div style="font-size:26px;font-weight:800;color:var(--accent)">${fmtBand(ob)}</div><div class="muted" style="font-size:12px">band rata-rata</div>` : `<div class="muted">belum ada skor</div>`}
-                <a class="btn sm primary" href="#/exam/${lv.id}" style="margin-top:8px">${started ? "Lanjutkan" : "Mulai Ujian"}</a>
+                <a class="btn sm ${locked ? "" : "primary"}" href="${locked ? "#/premium" : "#/exam/" + lv.id}" style="margin-top:8px">${locked ? "🔒 Premium" : (started ? "Lanjutkan" : "Mulai Ujian")}</a>
               </div>
             </div>
           </div>`;
@@ -2102,6 +2122,7 @@
     const level = params[0];
     const lv = LEVEL_MAP[level];
     if (!lv) { go("exam"); return; }
+    if (premiumGate(level)) return;
     $("#topbarTitle").textContent = "Ujian — " + lv.name;
     const ob = overallBand(level);
     $("#view").innerHTML = `
@@ -2138,6 +2159,7 @@
 
   routes.examSkill = (params) => {
     const level = params[0], skill = params[1];
+    if (premiumGate(level)) return;
     const id = EXAMS[level] && EXAMS[level][skill];
     if (!id) { go("exam/" + level); return; }
     const lv = LEVEL_MAP[level];
@@ -2392,6 +2414,7 @@
   const shuffleArr = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
   routes.practice = () => {
+    if (!hasPremium()) { premiumGate("intermediate"); return; }
     $("#topbarTitle").textContent = "Bank Latihan";
     const comps = [
       { key: "listening", icon: "🎧", label: "Listening" },
@@ -2430,6 +2453,7 @@
 
   routes.practiceComp = (params) => {
     const comp = params[0];
+    if (!hasPremium()) { premiumGate("intermediate"); return; }
     const meta = {
       listening: { label: "Listening", icon: "🎧" },
       reading: { label: "Reading", icon: "📖" },
@@ -2647,6 +2671,7 @@
      MIXED MODE (Campuran Acak dari semua komponen)
      ============================================================ */
   routes.mixed = () => {
+    if (!hasPremium()) { premiumGate("intermediate"); return; }
     $("#topbarTitle").textContent = "Mode Campuran";
     $("#view").innerHTML = `
       <h1>🎲 Mode Campuran</h1>

@@ -74,6 +74,44 @@
     return Math.round(avg * 10) / 10;
   }
 
+  /* ---------- Premium / aktivasi ---------- */
+  function hasPremium() {
+    const v = S.data().vip;
+    return !!(v && v.code && verifyVipCode(v.code));
+  }
+  function isPaidLevel(levelId) {
+    return (APP_CONFIG.paidLevels || []).includes(levelId);
+  }
+  function isLocked(levelId) {
+    return isPaidLevel(levelId) && !hasPremium();
+  }
+  function activateVip(code) {
+    code = String(code).trim();
+    if (!verifyVipCode(code)) return false;
+    S.record((d) => { d.vip = { code, at: Date.now() }; return d; });
+    syncSidebar();
+    return true;
+  }
+  function premiumGate(levelId) {
+    if (isLocked(levelId)) {
+      renderUpgrade(levelId);
+      return true;
+    }
+    return false;
+  }
+  function renderUpgrade(levelId) {
+    const lv = LEVEL_MAP[levelId];
+    $("#topbarTitle").textContent = "Premium";
+    $("#view").innerHTML = `
+      <div class="card" style="text-align:center">
+        <div style="font-size:52px">🔒</div>
+        <h1>Level ${esc(lv ? lv.name : "")} adalah Premium</h1>
+        <p class="muted">Untuk membuka level <strong>${esc(lv ? lv.name : "")}</strong> dan semua fitur lanjutan, aktivasi premium dengan kode yang Anda terima.</p>
+        <a class="btn primary lg" href="#/premium">⭐ Aktivasi Premium</a>
+        <a class="btn" href="#/dashboard" style="margin-left:8px">Ke Dasbor</a>
+      </div>`;
+  }
+
   const isDone = (id) => !!(S.data().lessons[id]);
   const markDone = (id) => { S.record((d) => { d.lessons[id] = true; return d; }); syncSidebar(); };
 
@@ -499,6 +537,12 @@
      ============================================================ */
   routes.exercise = (params) => {
     const [type, id] = params;
+    let levelId = null;
+    if (type === "listening") { const x = listeningById(id); if (x) levelId = x.level; }
+    else if (type === "reading") { const x = readingById(id); if (x) levelId = x.level; }
+    else if (type === "writing") { const x = writingById(id); if (x) levelId = x.level; }
+    else if (type === "speaking") { const x = speakingById(id); if (x) levelId = x.level; }
+    if (levelId && premiumGate(levelId)) return;
     if (type === "listening") renderListening(id);
     else if (type === "reading") renderReading(id);
     else if (type === "writing") renderWriting(id);
@@ -1579,6 +1623,114 @@
         S.record((d) => { d.grammar[g.id] = correct; return d; });
       };
     }
+  };
+
+  /* ============================================================
+     PREMIUM / AKTIVASI
+     ============================================================ */
+  routes.premium = () => {
+    $("#topbarTitle").textContent = "Premium";
+    const active = hasPremium();
+    $("#view").innerHTML = `
+      <div class="card">
+        <div style="text-align:center">
+          <div style="font-size:48px">⭐</div>
+          <h1>Premium IELTS Master</h1>
+          <p class="muted">Buka semua level: Intermediate, Advanced & Expert — plus seluruh fitur lanjutan.</p>
+          ${active ? `<div class="tip" style="display:inline-block">✅ Premium aktif. Terima kasih!</div>` : ""}
+        </div>
+        <div class="grid cols-4" style="margin-top:18px">
+          ${APP_CONFIG.paidLevels.map((lvId) => {
+            const lv = LEVEL_MAP[lvId];
+            return `<div class="card" style="margin:0;text-align:center;padding:14px">
+              <div style="font-size:26px">${lv.icon}</div>
+              <div style="font-weight:800">${esc(lv.name)}</div>
+              <div class="muted" style="font-size:12px">${lv.band}</div>
+              <div style="margin-top:6px;font-size:18px">${active ? "✅" : "🔒"}</div>
+            </div>`;
+          }).join("")}
+        </div>
+
+        ${active ? "" : `
+        <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:18px">
+          <h3>💳 Cara Aktivasi & Pembayaran</h3>
+          <div class="info-box" style="margin-top:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent)">Rp 99.000</div>
+            <div class="muted">Sekali bayar · berlaku selamanya (lifetime) · unlock semua level</div>
+          </div>
+          <ol style="margin-top:14px;line-height:2">
+            <li>Transfer <strong>Rp 99.000</strong> ke rekening <strong>BNI 0317096975</strong> a.n. <strong>M. Askar</strong>.</li>
+            <li>Kirim <strong>bukti transfer</strong> (screenshot/nomor referensi) ke email <strong><a href="mailto:askarnh@gmail.com">askarnh@gmail.com</a></strong> cc <strong><a href="mailto:askarnh@ymail.com">askarnh@ymail.com</a></strong>.</li>
+            <li>Kode aktivasi akan dikirim balik ke email Anda.</li>
+            <li>Masukkan kode di kolom di bawah untuk membuka premium.</li>
+          </ol>
+        </div>`}
+
+        <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:18px">
+          <h3>Masukkan Kode Aktivasi</h3>
+          ${active ? "" : `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+            <input type="text" id="vipInput" placeholder="Mis. IELTSTS-XXXXXXXX-1" style="flex:1;min-width:220px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+            <button class="btn primary" id="vipBtn">Aktivasi</button>
+          </div>
+          <div id="vipMsg" style="margin-top:8px"></div>`}
+          <div class="muted" style="margin-top:12px;font-size:13px"><Bum punya kode? Hubungi pemilik aplikasi.</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Admin — Generator Kode</h3>
+        <p class="muted" style="font-size:13px">Khusus pemilik. Masukkan kata sandi admin untuk membuat kode aktivasi.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input type="password" id="adminPass" placeholder="Kata sandi admin" style="flex:1;min-width:180px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+          <button class="btn" id="adminLogin">Masuk</button>
+        </div>
+        <div id="adminArea" style="margin-top:14px"></div>
+      </div>`;
+
+    $("#vipBtn").onclick = () => {
+      const code = $("#vipInput").value;
+      const msg = $("#vipMsg");
+      if (activateVip(code)) {
+        msg.innerHTML = `<span class="feedback-correct">✅ Aktivasi berhasil! Semua level premium terbuka.</span>`;
+        setTimeout(() => render(), 1200);
+      } else {
+        msg.innerHTML = `<span class="feedback-wrong">✗ Kode tidak valid. Periksa kembali.</span>`;
+      }
+    };
+
+    $("#adminLogin").onclick = () => {
+      const pass = $("#adminPass").value;
+      const area = $("#adminArea");
+      if (pass === APP_CONFIG.ADMIN_PASSWORD) {
+        const codes = [];
+        for (let i = 1; i <= 20; i++) codes.push(generateVipCode(i));
+        area.innerHTML = `
+          <div class="info-box">
+            <div style="font-weight:700;margin-bottom:8px">20 kode siap dibagikan:</div>
+            <div style="max-height:220px;overflow:auto;font-family:monospace;font-size:13px;line-height:1.7">${codes.map((c) => `<div>${c}</div>`).join("")}</div>
+            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn sm primary" id="copyCodes">📋 Salin Semua</button>
+              <button class="btn sm" id="moreCodes">Generate 20 lagi</button>
+            </div>
+          </div>`;
+        area._codes = codes;
+        $("#copyCodes").onclick = () => {
+          navigator.clipboard.writeText(codes.join("\n")).then(() => toast("✅ Kode disalin!")).catch(() => toast("Gagal menyalin"));
+        };
+        $("#moreCodes").onclick = () => {
+          const start = area._codes.length + 1;
+          const add = [];
+          for (let i = start; i < start + 20; i++) add.push(generateVipCode(i));
+          area._codes = area._codes.concat(add);
+          const box = area.querySelector(".info-box div[style*='max-height']");
+          box.innerHTML += add.map((c) => `<div>${c}</div>`).join("");
+          $("#copyCodes").onclick = () => { navigator.clipboard.writeText(area._codes.join("\n")).then(() => toast("✅ Kode disalin!")).catch(() => toast("Gagal menyalin")); };
+          toast("✅ 20 kode lagi ditambahkan");
+        };
+      } else {
+        area.innerHTML = `<span class="feedback-wrong">✗ Kata sandi salah.</span>`;
+      }
+    };
   };
 
   /* ============================================================

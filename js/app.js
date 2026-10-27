@@ -1660,10 +1660,23 @@
           </div>
           <ol style="margin-top:14px;line-height:2">
             <li>Transfer <strong>Rp 99.000</strong> ke rekening <strong>BNI 0317096975</strong> a.n. <strong>M. Askar</strong>.</li>
-            <li>Kirim <strong>bukti transfer</strong> (screenshot/nomor referensi) ke email <strong><a href="mailto:askarnh@gmail.com">askarnh@gmail.com</a></strong> cc <strong><a href="mailto:askarnh@ymail.com">askarnh@ymail.com</a></strong>.</li>
+            <li>Klik tombol di bawah untuk <strong>mengirim bukti transfer secara otomatis</strong> lewat aplikasi email Anda.</li>
             <li>Kode aktivasi akan dikirim balik ke email Anda.</li>
             <li>Masukkan kode di kolom di bawah untuk membuka premium.</li>
           </ol>
+          <div class="info-box" style="margin-top:14px">
+            <div style="font-weight:700;margin-bottom:10px">Isi data transfer Anda:</div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label class="muted" style="font-size:13px">Nama pengirim</label><br><input type="text" id="pfNama" placeholder="Nama Anda" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 12px"></div>
+              <div><label class="muted" style="font-size:13px">Tanggal transfer</label><br><input type="date" id="pfTanggal" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 12px"></div>
+              <div style="grid-column:1 / -1"><label class="muted" style="font-size:13px">Nomor referensi / transfer</label><br><input type="text" id="pfRef" placeholder="Nomor referensi transfer" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 12px"></div>
+            </div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn primary" id="emailBtn">📧 Kirim Bukti Pembayaran</button>
+            <button class="btn" id="downloadBtn">⬇️ Unduh Draft Email (.eml)</button>
+          </div>
+          <div class="muted" style="margin-top:8px;font-size:13px">Email akan terbuka secara otomatis ke <strong>askarnh@gmail.com</strong> (cc <strong>askarnh@ymail.com</strong>) dengan subjek & isi terisi sesuai data di atas. Cukup lampirkan bukti transfer lalu klik "Kirim".</div>
         </div>`}
 
         <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:18px">
@@ -1686,6 +1699,55 @@
         </div>
         <div id="adminArea" style="margin-top:14px"></div>
       </div>`;
+
+    /* Email otomatis: buka aplikasi email dengan field terisi */
+    const emailBtn = $("#emailBtn");
+    const downloadBtn = $("#downloadBtn");
+
+    function emailBody() {
+      const nama = ($("#pfNama") && $("#pfNama").value.trim()) || "[isi nama]";
+      const tanggal = ($("#pfTanggal") && $("#pfTanggal").value) || "[isi tanggal]";
+      const ref = ($("#pfRef") && $("#pfRef").value.trim()) || "[isi nomor]";
+      return (
+        "Halo,\n\nSaya ingin mengirim bukti pembayaran untuk aktivasi Premium IELTS Master.\n\n" +
+        "Detail pembayaran:\n" +
+        "- Jumlah: Rp 99.000\n" +
+        "- Bank: BNI\n" +
+        "- Rekening: 0317096975 (a.n. M. Askar)\n" +
+        "- Tanggal transfer: " + tanggal + "\n" +
+        "- Nama pengirim: " + nama + "\n" +
+        "- Nomor referensi/transfer: " + ref + "\n\n" +
+        "Bukti transfer terlampir pada lampiran email ini.\n\n" +
+        "Mohon kirimkan kode aktivasi saya kembali. Terima kasih."
+      );
+    }
+
+    if (emailBtn) {
+      emailBtn.onclick = () => {
+        const to = "askarnh@gmail.com";
+        const cc = "askarnh@ymail.com";
+        const subject = encodeURIComponent("Bukti Pembayaran Premium IELTS Master - Rp 99.000");
+        const body = encodeURIComponent(emailBody());
+        window.location.href = "mailto:" + to + "?cc=" + cc + "&subject=" + subject + "&body=" + body;
+      };
+    }
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        const to = "askarnh@gmail.com";
+        const cc = "askarnh@ymail.com";
+        const subject = "Bukti Pembayaran Premium IELTS Master - Rp 99.000";
+        const eml = "To: " + to + "\r\nCc: " + cc + "\r\nSubject: " + subject + "\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\n\r\n" + emailBody();
+        const blob = new Blob([eml], { type: "message/rfc822" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bukti-pembayaran-premium.eml";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+    }
 
     $("#vipBtn").onclick = () => {
       const code = $("#vipInput").value;
